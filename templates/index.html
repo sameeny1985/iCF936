@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>شبیه‌ساز و پردازشگر معماری اطلاعات FI9</title>
+    <style>
+        body { font-family: Tahoma, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; text-align: center; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; }
+        input[type="text"] { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        button { background: #3498db; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; }
+        button:hover { background: #2980b9; }
+        .result-section { margin-top: 30px; padding: 20px; background: #fafafa; border: 1px solid #e1e1e1; border-radius: 4px; }
+        .dot-canvas { display: inline-block; position: relative; width: 150px; height: 150px; background: #fff; margin: 10px; }
+        .pixel-dot { position: absolute; width: 6px; height: 6px; background: #e74c3c; border-radius: 50%; transform: translate(-50%, -50%); }
+        .metrics-box { display: flex; justify-content: space-between; background: #e8f8f5; padding: 15px; border-radius: 4px; margin-top: 15px; }
+        @media print { body { background: white; } button, input { display: none; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>سامانه پردازشگر و تحلیلگر معماری FI9</h1>
+    <div class="form-group">
+        <label for="indicesInput">شماره ایندکس‌ها را وارد کنید (با کاما، فاصله یا خط فاصله، مثلاً: 1, 2, 3):</label>
+        <input type="text" id="indicesInput" placeholder="مثال: 1, 2, 3">
+    </div>
+    <button onclick="processData()">اجرا و نمایش نقاط</button>
+
+    <div class="result-section" id="resultSection" style="display:none;">
+        <h3>نمایش نقاط پیکسلی (بدون جداول مرزی):</h3>
+        <div id="dotsContainer"></div>
+        
+        <div class="metrics-box" id="metricsBox"></div>
+        <button onclick="window.print()" style="margin-top: 20px; background: #27ae60;">پرینت و خروجی PDF</button>
+    </div>
+</div>
+
+<script>
+async function processData() {
+    const val = document.getElementById('indicesInput').value;
+    const response = await fetch('/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ indices: val })
+    });
+    const data = await response.json();
+    if(data.success) {
+        document.getElementById('resultSection').style.display = 'block';
+        const container = document.getElementById('dotsContainer');
+        container.innerHTML = '';
+        
+        let wrapper = document.createElement('div');
+        wrapper.className = 'dot-canvas';
+        data.combined_dots.forEach(pt => {
+            let dot = document.createElement('div');
+            dot.className = 'pixel-dot';
+            dot.style.left = (pt[0] * 50 + 25) + 'px';
+            dot.style.top = (pt[1] * 50 + 25) + 'px';
+            wrapper.appendChild(dot);
+        });
+        container.appendChild(wrapper);
+
+        const m = data.metrics;
+        document.getElementById('metricsBox').innerHTML = `
+            <div><strong>حجم FI9:</strong> ${m.fi9_bits} بیت (${m.fi9_bytes} بایت)</div>
+            <div><strong>حجم باینری سنتی:</strong> ${m.binary_bits} بیت (${m.binary_bytes} بایت)</div>
+        `;
+    }
+}
+</script>
+</body>
+</html>
