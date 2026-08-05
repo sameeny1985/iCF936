@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FI9 Spatial Encoding – Interactive Demo</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --card: #1a2332;
+    --accent: #3b82f6;
+    --accent2: #22d3ee;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --filled: #22d3ee;
+    --empty: #334155;
+    --border: #2d3748;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+    padding: 2rem 1.5rem;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 1.8rem; margin-bottom: 0.4rem; }
+  header p { color: var(--muted); font-size: 0.95rem; max-width: 700px; margin: 0 auto; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .card h2 { font-size: 1.25rem; margin-bottom: 1rem; color: var(--accent2); }
+  textarea, input[type="text"], input[type="number"] {
+    width: 100%;
+    background: #0f172a;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 1rem;
+    resize: vertical;
+  }
+  textarea { min-height: 90px; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 0.7rem 1.4rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    margin: 0.4rem 0.4rem 0.4rem 0;
+    transition: background 0.2s;
+  }
+  button:hover { background: #2563eb; }
+  button.secondary { background: #475569; }
+  button.secondary:hover { background: #64748b; }
+  .grid-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 1rem;
+  }
+  .symbol {
+    background: #0f172a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+    width: 92px;
+  }
+  .symbol .state {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .matrix {
+    display: grid;
+    grid-template-columns: repeat(3, 18px);
+    grid-template-rows: repeat(3, 18px);
+    gap: 3px;
+    margin: 0 auto;
+  }
+  .cell {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--empty);
+  }
+  .cell.filled { background: var(--filled); box-shadow: 0 0 6px var(--filled); }
+  .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.8rem; }
+  .info { color: var(--muted); font-size: 0.9rem; margin-top: 0.6rem; }
+  .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .tab {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .hidden { display: none; }
+  footer {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border);
+  }
+  a { color: var(--accent2); }
+  .codebook-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 8px;
+  }
+  .codebook-item { cursor: pointer; }
+  .codebook-item:hover { border-color: var(--accent2); }
+  #status { margin-top: 0.8rem; font-family: monospace; font-size: 0.9rem; }
+  .success { color: #4ade80; }
+  .error { color: #f87171; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FI9 Spatial Encoding Demo</h1>
+  <p>
+    Interactive reference implementation of the 512-state 3×3 graphical cell matrix
+    described in the paper by Said Hassan Ameeny Poor.
+    Reviewers can encode, decode and inspect every symbol.
+  </p>
+</header>
+
+<div class="container">
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="encode">Encode / Decode</button>
+    <button class="tab" data-tab="codebook">Full Codebook (0–511)</button>
+    <button class="tab" data-tab="token">Graphical Token</button>
+    <button class="tab" data-tab="hash">Graphical Hash (SHA-256)</button>
+    <button class="tab" data-tab="native">Native FI Hash</button>
+    <button class="tab" data-tab="about">About the Mapping</button>
+  </div>
+
+  <!-- ========== ENCODE / DECODE ========== -->
+  <div id="tab-encode" class="card">
+    <h2>Encode Text → FI9 Symbols</h2>
+    <textarea id="inputText" placeholder="Type any text here… (e.g. The position of a point is the information.)">The position of a point is the information.</textarea>
+    <div class="controls">
+      <button onclick="doEncode()">Encode to FI9</button>
+      <button class="secondary" onclick="clearEncode()">Clear</button>
+    </div>
+    <div id="encodeStatus" class="info"></div>
+    <div id="symbolGrid" class="grid-row"></div>
+
+    <hr style="border-color:var(--border); margin:1.5rem 0;">
+
+    <h2>Decode FI9 States → Text</h2>
+    <input type="text" id="stateInput" placeholder="Enter comma-separated states, e.g. 84,104,101,32,112,111,115,105,116,105,111,110">
+    <div class="controls">
+      <button onclick="doDecode()">Decode</button>
+      <button class="secondary" onclick="document.getElementById('stateInput').value=''">Clear</button>
+    </div>
+    <div id="decodeResult" class="info"></div>
+  </div>
+
+  <!-- ========== CODEBOOK ========== -->
+  <div id="tab-codebook" class="card hidden">
+    <h2>Complete FI9 Codebook – 512 States</h2>
+    <p class="info">Click any symbol to see its details. States 0–255 = data bytes; 256–511 = protocol region.</p>
+    <div class="controls">
+      <label>Filter range: </label>
+      <input type="number" id="fromState" value="0" min="0" max="511" style="width:80px"> –
+      <input type="number" id="toState" value="63" min="0" max="511" style="width:80px">
+      <button onclick="renderCodebook()">Show</button>
+      <button class="secondary" onclick="showRegion(0,255)">Region I (0–255)</button>
+      <button class="secondary" onclick="showRegion(256,511)">Region II (256–511)</button>
+    </div>
+    <div id="codebookGrid" class="codebook-grid" style="margin-top:1rem;"></div>
+    <div id="codebookDetail" class="info" style="margin-top:1rem;"></div>
+  </div>
+
+  <!-- ========== TOKEN ========== -->
+  <div id="tab-token" class="card hidden">
+    <h2>Version-1 Graphical Token (32 symbols)</h2>
+    <p class="info">A token is an ordered sequence of 32 FI9 symbols (paper §6).</p>
+    <input type="text" id="tokenInput" value="FI9-TOKEN-DEMO-2025" placeholder="Token payload">
+    <div class="controls">
+      <button onclick="makeToken()">Generate Token</button>
+    </div>
+    <div id="tokenGrid" class="grid-row"></div>
+    <div id="tokenStatus" class="info"></div>
+  </div>
+
+  <!-- ========== HASH ========== -->
+  <div id="tab-hash" class="card hidden">
+    <h2>Graphical Hash (SHA-256 → FI9)</h2>
+    <p class="info">Conventional hash bytes are mapped into FI9 symbols (paper §7). This is a representation layer only.</p>
+    <input type="text" id="hashInput" value="Hello FI9 Spatial Encoding" placeholder="Data to hash">
+    <div class="controls">
+      <button onclick="makeHash()">Compute Graphical Hash</button>
+    </div>
+    <div id="hashStatus" class="info"></div>
+    <div id="hashGrid" class="grid-row"></div>
+  </div>
+
+  <!-- ========== NATIVE FI HASH ========== -->
+  <div id="tab-native" class="card hidden">
+    <h2>Native FI Hash (Section 7.1 – Research Prototype)</h2>
+    <p class="info">
+      Operates entirely inside the 512-state spatial symbol space.
+      Uses nonlinear substitution on 9-bit FI states + spatial diffusion
+      that mixes neighbouring symbols (inspired by the 3×3 cell geometry).
+      <strong>Not cryptographically proven</strong> – intended for experimental evaluation.
+    </p>
+    <input type="text" id="nativeInput" value="The position of a point is the information." placeholder="Data to hash">
+    <div class="controls">
+      <button onclick="makeNativeHash()">Compute Native FI Hash</button>
+    </div>
+    <div id="nativeStatus" class="info"></div>
+    <div id="nativeGrid" class="grid-row"></div>
+  </div>
+
+  <!-- ========== ABOUT ========== -->
+  <div id="tab-about" class="card hidden">
+    <h2>Mapping Convention Used in This Implementation</h2>
+    <p>
+      The paper defines each FI9 symbol as the binary vector<br>
+      <code>S = (c₁, c₂, c₃, c₄, c₅, c₆, c₇, c₈, c₉)</code> where each <code>cᵢ ∈ {0,1}</code>.
+    </p>
+    <p style="margin-top:0.8rem;">
+      <strong>Cell numbering (row-major):</strong>
+    </p>
+    <pre style="background:#0f172a;padding:1rem;border-radius:8px;margin:0.8rem 0;">
+1 2 3
+4 5 6
+7 8 9
+    </pre>
+    <p>
+      The numerical state is formed by treating cell 1 as the least-significant bit (LSB)
+      and cell 9 as the most-significant bit (MSB).  Consequently:
+    </p>
+    <ul style="margin:0.8rem 0 0.8rem 1.5rem; color:var(--muted);">
+      <li>State 0 → all cells empty</li>
+      <li>State 1 → only cell 1 occupied</li>
+      <li>State 2 → only cell 2 occupied</li>
+      <li>…</li>
+      <li>State 511 → all nine cells occupied</li>
+    </ul>
+    <p>
+      This mapping is bijective, deterministic and perfectly reversible
+      (Properties 1–4 of the paper).  Region I (0–255) is an identity mapping
+      onto ordinary bytes; Region II (256–511) is reserved for protocol symbols.
+    </p>
+    <p style="margin-top:1rem;">
+      Source code, tests and deployment instructions are available in the accompanying
+      GitHub repository.
+    </p>
+  </div>
+
+</div>
+
+<footer>
+  FI9 Reference Implementation · Based on the research draft by Said Hassan Ameeny Poor<br>
+  This demo is intended for peer-review verification of the spatial encoding model.
+</footer>
+
+<script>
+/* ============================================================
+   FI9 core logic (identical to the Python reference)
+   ============================================================ */
+function stateToBits(state) {
+  const bits = [];
+  for (let i = 0; i < 9; i++) bits.push((state >> i) & 1);
+  return bits;
+}
+
+function bitsToState(bits) {
+  let s = 0;
+  for (let i = 0; i < 9; i++) s |= (bits[i] & 1) << i;
+  return s;
+}
+
+function stateToMatrix(state) {
+  const bits = stateToBits(state);
+  return [
+    [bits[0], bits[1], bits[2]],
+    [bits[3], bits[4], bits[5]],
+    [bits[6], bits[7], bits[8]]
+  ];
+}
+
+function renderSymbol(state, extraClass = "") {
+  const m = stateToMatrix(state);
+  let html = `<div class="symbol ${extraClass}" data-state="${state}">`;
+  html += `<div class="state">${state}</div>`;
+  html += `<div class="matrix">`;
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      html += `<div class="cell ${m[r][c] ? 'filled' : ''}"></div>`;
+    }
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+/* ============================================================
+   UI helpers
+   ============================================================ */
+function doEncode() {
+  const text = document.getElementById('inputText').value;
+  const bytes = new TextEncoder().encode(text);
+  const states = Array.from(bytes); // identity mapping for 0-255
+  const grid = document.getElementById('symbolGrid');
+  grid.innerHTML = states.map(s => renderSymbol(s)).join('');
+  document.getElementById('encodeStatus').innerHTML =
+    `<span class="success">Encoded ${bytes.length} bytes → ${states.length} FI9 symbols.</span><br>` +
+    `States: <code style="word-break:break-all;">${states.join(',')}</code>`;
+}
+
+function clearEncode() {
+  document.getElementById('inputText').value = '';
+  document.getElementById('symbolGrid').innerHTML = '';
+  document.getElementById('encodeStatus').textContent = '';
+}
+
+function doDecode() {
+  const raw = document.getElementById('stateInput').value.trim();
+  if (!raw) return;
+  try {
+    const states = raw.split(/[,\s]+/).map(s => parseInt(s, 10));
+    for (const s of states) {
+      if (isNaN(s) || s < 0 || s > 255)
+        throw new Error(`Invalid data state: ${s} (must be 0-255 for byte recovery)`);
+    }
+    const bytes = new Uint8Array(states);
+    const text = new TextDecoder().decode(bytes);
+    document.getElementById('decodeResult').innerHTML =
+      `<span class="success">Decoded ${states.length} symbols:</span><br><strong>${escapeHtml(text)}</strong>`;
+  } catch (e) {
+    document.getElementById('decodeResult').innerHTML =
+      `<span class="error">Error: ${e.message}</span>`;
+  }
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderCodebook() {
+  const from = Math.max(0, parseInt(document.getElementById('fromState').value) || 0);
+  const to   = Math.min(511, parseInt(document.getElementById('toState').value) || 63);
+  const grid = document.getElementById('codebookGrid');
+  let html = '';
+  for (let s = from; s <= to; s++) {
+    html += renderSymbol(s, 'codebook-item');
+  }
+  grid.innerHTML = html;
+  // click handlers
+  grid.querySelectorAll('.symbol').forEach(el => {
+    el.addEventListener('click', () => {
+      const st = parseInt(el.dataset.state);
+      const bits = stateToBits(st);
+      document.getElementById('codebookDetail').innerHTML =
+        `<strong>State ${st}</strong><br>` +
+        `Bits (cell1→cell9): [${bits.join(', ')}]<br>` +
+        `Region: ${st <= 255 ? 'I (data byte)' : 'II (protocol)'}` +
+        (st <= 255 ? `<br>ASCII (if printable): ${st >= 32 && st < 127 ? String.fromCharCode(st) : '(non-printable)'}` : '');
+    });
+  });
+}
+
+function showRegion(a, b) {
+  document.getElementById('fromState').value = a;
+  document.getElementById('toState').value = b;
+  renderCodebook();
+}
+
+function makeToken() {
+  const text = document.getElementById('tokenInput').value;
+  const bytes = new TextEncoder().encode(text);
+  const states = [];
+  for (let i = 0; i < 32; i++) {
+    states.push(i < bytes.length ? bytes[i] : 0);
+  }
+  document.getElementById('tokenGrid').innerHTML = states.map(s => renderSymbol(s)).join('');
+  document.getElementById('tokenStatus').innerHTML =
+    `<span class="success">32-symbol Version-1 token generated.</span><br>` +
+    `States: <code style="word-break:break-all;font-size:0.8rem;">${states.join(',')}</code>`;
+}
+
+async function makeHash() {
+  const text = document.getElementById('hashInput').value;
+  const data = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  document.getElementById('hashGrid').innerHTML = hashArray.map(s => renderSymbol(s)).join('');
+  document.getElementById('hashStatus').innerHTML =
+    `<span class="success">SHA-256 (32 bytes) → 32 FI9 symbols.</span><br>` +
+    `Hex: <code style="word-break:break-all;font-size:0.8rem;">${hashArray.map(b=>b.toString(16).padStart(2,'0')).join('')}</code>`;
+}
+
+/* ============================================================
+   Native FI Hash (JS port of the Python reference)
+   ============================================================ */
+function nativeFIHash(dataBytes, outLen = 32, rounds = 16) {
+  const msg = Array.from(dataBytes).map(b => b & 0xFF);
+  const RC = [];
+  for (let i = 0; i < rounds * 16 + 64; i++) RC.push((i * 37 + 11) & 511);
+
+  function rotl9(x, n) {
+    n %= 9;
+    return ((x << n) | (x >>> (9 - n))) & 511;
+  }
+  function rotr9(x, n) {
+    n %= 9;
+    return ((x >>> n) | (x << (9 - n))) & 511;
+  }
+  function sbox(x) {
+    x = (x + 0x1A3) & 511;
+    x = rotl9(x, 3);
+    x ^= rotl9(x, 1);
+    x = (x * 3 + 0x05B) & 511;
+    x = rotl9(x, 2);
+    x ^= (x >>> 4);
+    return x & 511;
+  }
+  function diffuse(state) {
+    const n = state.length;
+    const tmp = state.slice();
+    for (let i = 0; i < n; i++) {
+      const left  = tmp[(i - 1 + n) % n];
+      const right = tmp[(i + 1) % n];
+      state[i] = (tmp[i] ^ rotl9(left, 1) ^ rotr9(right, 2) ^ rotl9(tmp[i], 4)) & 511;
+    }
+  }
+
+  const STATE_SIZE = 16;
+  let state = [];
+  for (let i = 0; i < STATE_SIZE; i++) state.push((i * 0x11 + 0x2A) & 511);
+
+  // padding
+  msg.push(0x100);
+  msg.push(dataBytes.length & 511);
+
+  for (let blockStart = 0; blockStart < msg.length; blockStart += STATE_SIZE) {
+    const block = msg.slice(blockStart, blockStart + STATE_SIZE);
+    for (let i = 0; i < block.length; i++) {
+      state[i] = (state[i] ^ block[i]) & 511;
+    }
+    for (let r = 0; r < rounds; r++) {
+      for (let i = 0; i < STATE_SIZE; i++) {
+        state[i] = sbox(state[i] ^ RC[r * STATE_SIZE + i]);
+      }
+      diffuse(state);
+    }
+  }
+
+  const out = [];
+  while (out.length < outLen) {
+    for (let r = 0; r < 4; r++) {
+      for (let i = 0; i < STATE_SIZE; i++) {
+        state[i] = sbox(state[i] ^ RC[(r * 7 + i) % RC.length]);
+      }
+      diffuse(state);
+    }
+    const take = Math.min(8, outLen - out.length);
+    for (let i = 0; i < take; i++) out.push(state[i]);
+  }
+  return out.slice(0, outLen);
+}
+
+function makeNativeHash() {
+  const text = document.getElementById('nativeInput').value;
+  const data = new TextEncoder().encode(text);
+  const states = nativeFIHash(data, 32, 16);
+  document.getElementById('nativeGrid').innerHTML = states.map(s => renderSymbol(s)).join('');
+  document.getElementById('nativeStatus').innerHTML =
+    `<span class="success">Native FI Hash → 32 symbols (all values ∈ [0,511]).</span><br>` +
+    `States: <code style="word-break:break-all;font-size:0.8rem;">${states.join(',')}</code>`;
+}
+
+/* Tabs */
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.card').forEach(c => c.classList.add('hidden'));
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+    if (btn.dataset.tab === 'codebook') renderCodebook();
+  });
+});
+
+/* Auto-encode the default text on load */
+doEncode();
+</script>
+</body>
+</html>
